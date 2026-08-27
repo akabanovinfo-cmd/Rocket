@@ -410,6 +410,15 @@ function drawGlow(rgb,x,y,r,a){
 }
 function rr(x,y,w,h,r){ ctx.beginPath(); if(ctx.roundRect) ctx.roundRect(x,y,w,h,r); else ctx.rect(x,y,w,h); }
 function circle(x,y,r){ ctx.beginPath(); ctx.arc(x,y,r,0,6.2832); }
+function cone(cx,yTop,halfBot,yBot){
+  ctx.beginPath();
+  ctx.moveTo(cx,yTop);
+  ctx.lineTo(cx-halfBot,yBot-2.5);
+  ctx.quadraticCurveTo(cx-halfBot,yBot,cx-halfBot+2,yBot);
+  ctx.lineTo(cx+halfBot-2,yBot);
+  ctx.quadraticCurveTo(cx+halfBot,yBot,cx+halfBot,yBot-2.5);
+  ctx.closePath(); ctx.fill();
+}
 function poly(x,y,r,n,rot){
   ctx.beginPath();
   for(var i=0;i<n;i++){
@@ -601,10 +610,10 @@ function spurt(){
   var n=RM?6:16,i;
   for(i=0;i<n;i++){
     var a=-Math.PI/2+(Math.random()-.5)*.8,v=190+Math.random()*300;
-    parts.push({x:px+(Math.random()-.5)*7,y:py-26*shipScale(),vx:Math.cos(a)*v,vy:Math.sin(a)*v,l:0,m:.55+Math.random()*.5,r:2.4+Math.random()*3.4,rgb:'255,255,255'});
+    parts.push({x:px+(Math.random()-.5)*7,y:py-31*shipScale(),vx:Math.cos(a)*v,vy:Math.sin(a)*v,l:0,m:.55+Math.random()*.5,r:2.4+Math.random()*3.4,rgb:'255,255,255'});
   }
   for(i=0;i<3;i++)
-    parts.push({x:px,y:py-26*shipScale(),vx:(Math.random()-.5)*90,vy:-250-Math.random()*150,l:0,m:.95,r:5+Math.random()*3,rgb:'255,255,255'});
+    parts.push({x:px,y:py-31*shipScale(),vx:(Math.random()-.5)*90,vy:-250-Math.random()*150,l:0,m:.95,r:5+Math.random()*3,rgb:'255,255,255'});
   recoil=1;
 }
 function pop(x,y,txt,rgb){ if(pops.length<24) pops.push({x:x,y:y,txt:txt,rgb:rgb,l:0}); }
@@ -1001,44 +1010,80 @@ function drawShip(x,y,tilt,alpha,sc){
   if(muzzle>0) drawGlow('255,240,210',0,-30,26*muzzle,.75*muzzle);
   ctx.globalCompositeOperation='source-over';
 
-  ctx.fillStyle=S.ball; circle(-9.5,14,8.6); ctx.fill(); circle(9.5,14,8.6); ctx.fill();
-  ctx.fillStyle=S.body; rr(-8.5,-14,17,30,8.5); ctx.fill();
+  /* ===== «Союз»: пакет королёвской схемы ===== */
+  var flick=.8+Math.sin(bobT*26)*.2;
 
-  /* плавники — от «Манёвра». Рисуем поверх корпуса, иначе их закрывают шары */
+  /* задняя пара боковых блоков — даёт объём пакету */
+  ctx.fillStyle='#A6ACC2';
+  cone(-5.2,-8,4.4,15.5); cone(5.2,-8,4.4,15.5);
+
+  /* передняя пара боковых блоков */
+  ctx.fillStyle='#DCE1EF';
+  cone(-9.6,-11,5.6,16.5); cone(9.6,-11,5.6,16.5);
+  ctx.fillStyle='rgba(0,0,0,.15)';
+  cone(-7.4,-9,2.2,16); cone(11.8,-9,2.2,16);
+
+  /* оживальные носы боковых блоков — в цвет корпуса */
+  ctx.fillStyle=S.body;
+  ctx.beginPath(); ctx.moveTo(-9.6,-11); ctx.lineTo(-12.6,-3); ctx.lineTo(-6.6,-3); ctx.closePath(); ctx.fill();
+  ctx.beginPath(); ctx.moveTo(9.6,-11); ctx.lineTo(12.6,-3); ctx.lineTo(6.6,-3); ctx.closePath(); ctx.fill();
+
+  /* плавники — от «Манёвра», у основания боковых блоков */
   if(up.agile>0){
     ctx.fillStyle='rgba('+S.rgb+',.92)';
     ctx.strokeStyle='rgba(255,255,255,.5)'; ctx.lineWidth=1;
     for(var f=0;f<up.agile;f++){
-      var fy=1+f*8;
-      ctx.beginPath(); ctx.moveTo(-7,fy); ctx.lineTo(-20-f*4,fy+13); ctx.lineTo(-7,fy+11); ctx.closePath(); ctx.fill(); ctx.stroke();
-      ctx.beginPath(); ctx.moveTo(7,fy); ctx.lineTo(20+f*4,fy+13); ctx.lineTo(7,fy+11); ctx.closePath(); ctx.fill(); ctx.stroke();
+      var fy=3+f*5;
+      ctx.beginPath(); ctx.moveTo(-13,fy); ctx.lineTo(-21-f*3,fy+11); ctx.lineTo(-13,fy+10); ctx.closePath(); ctx.fill(); ctx.stroke();
+      ctx.beginPath(); ctx.moveTo(13,fy); ctx.lineTo(21+f*3,fy+11); ctx.lineTo(13,fy+10); ctx.closePath(); ctx.fill(); ctx.stroke();
     }
   }
-
-  /* броневые кольца — от «Корпуса» */
-  if(up.hull>0){
-    ctx.strokeStyle='rgba(255,255,255,.75)'; ctx.lineWidth=2.4;
-    for(var hgt=0;hgt<up.hull;hgt++){
-      rr(-10,-9+hgt*7.5,20,4.6,2.3); ctx.stroke();
-    }
-  }
-  /* жабры — от «Автозарядки» */
+  /* жабры наддува — от «Автозарядки», на боковых блоках */
   if(up.rate>0){
     ctx.fillStyle='rgba(255,255,255,'+(0.62+0.28*Math.sin(bobT*9))+')';
     for(var v=0;v<up.rate;v++){
-      ctx.fillRect(-9,-3+v*5.4,4.4,2.8); ctx.fillRect(4.6,-3+v*5.4,4.4,2.8);
+      ctx.fillRect(-12.4,1+v*4.6,4,2.4); ctx.fillRect(8.4,1+v*4.6,4,2.4);
     }
   }
 
-  ctx.fillStyle=S.tip; circle(0,-16,9.6); ctx.fill();
-  /* накал головки — от «Боевой части» */
+  /* центральный блок */
+  ctx.fillStyle='#EEF1F8'; rr(-5,-19,10,35,2.4); ctx.fill();
+  ctx.fillStyle='rgba(0,0,0,.13)'; rr(2.3,-19,2.7,35,1.3); ctx.fill();
+  ctx.fillStyle='rgba(255,255,255,.5)'; rr(-4.2,-17,2,31,1); ctx.fill();
+  ctx.fillStyle=S.body; rr(-5,-8,10,3.2,1.2); ctx.fill();
+
+  /* броневые пояса — от «Корпуса» */
+  if(up.hull>0){
+    ctx.strokeStyle='rgba(255,255,255,.8)'; ctx.lineWidth=2.2;
+    for(var hgt=0;hgt<up.hull;hgt++){ rr(-5.9,-15+hgt*6.6,11.8,3.4,1.7); ctx.stroke(); }
+  }
+
+  /* головной обтекатель */
+  ctx.fillStyle=S.tip;
+  ctx.beginPath(); ctx.moveTo(0,-30);
+  ctx.quadraticCurveTo(-5,-24,-5,-19); ctx.lineTo(5,-19);
+  ctx.quadraticCurveTo(5,-24,0,-30); ctx.closePath(); ctx.fill();
+
+  /* система аварийного спасения — та самая игла «Союза» */
+  ctx.fillStyle='#C3C9DC'; rr(-1,-38,2,9,1); ctx.fill();
+  ctx.fillStyle=S.ball; circle(0,-31,2.3); ctx.fill();
+
+  /* накал — от «Боевой части» */
   if(up.dmg>0){
     ctx.globalCompositeOperation='lighter';
-    drawGlow('255,110,70',0,-17,16+up.dmg*3.4,.2*up.dmg+.18);
+    drawGlow('255,110,70',0,-31,14+up.dmg*3.2,.2*up.dmg+.18);
     ctx.globalCompositeOperation='source-over';
   }
-  ctx.fillStyle='rgba(0,0,0,.22)'; rr(-8.2,-8,16.4,2.4,1.2); ctx.fill();
-  ctx.fillStyle='rgba(255,255,255,.42)'; rr(-5,-12,3.6,20,1.8); ctx.fill();
+
+  /* сопла и факелы пяти двигателей */
+  ctx.fillStyle='#878DA5';
+  ctx.fillRect(-3.4,16,6.8,3.2);
+  ctx.fillRect(-12.6,16.5,5.4,2.8); ctx.fillRect(7.2,16.5,5.4,2.8);
+  ctx.globalCompositeOperation='lighter';
+  drawGlow('255,175,85',0,22,10*flick,.8);
+  drawGlow('255,140,70',-9.8,21,7*flick,.7);
+  drawGlow('255,140,70',9.8,21,7*flick,.7);
+  ctx.globalCompositeOperation='source-over';
 
   /* ореол щита — от модуля «Щит» */
   if(up.shield>0){
