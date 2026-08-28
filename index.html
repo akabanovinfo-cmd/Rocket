@@ -163,6 +163,19 @@
 
   /* ---------- списки карточек ---------- */
   .scroll{justify-content:flex-start;overflow-y:auto;gap:14px;padding-top:calc(24px + env(safe-area-inset-top))}
+  .frag{
+    width:100%;max-width:340px;text-align:left;
+    border:1px solid var(--line);border-left:2px solid var(--warm);
+    border-radius:12px;padding:13px 15px;background:rgba(16,10,36,.85);
+    display:grid;gap:5px;animation:cardIn .45s ease .15s both;
+  }
+  .frag[hidden]{display:none}
+  .frag.locked{border-left-color:var(--line);opacity:.4}
+  .frag-tag{margin:0;font-size:10px;font-weight:600;letter-spacing:.18em;text-transform:uppercase;color:var(--warm)}
+  .frag.locked .frag-tag{color:var(--muted)}
+  .frag-t{margin:0;font-family:"Unbounded",sans-serif;font-weight:700;font-size:16.5px;letter-spacing:-.01em}
+  .frag-s{margin:0;font-size:11px;color:var(--haze);font-style:italic}
+  .frag-b{margin:0;font-size:13.5px;line-height:1.5;color:#D8CFF4}
   .shop-head{display:grid;gap:6px;justify-items:center}
   .map{display:flex;align-items:center;width:100%;max-width:360px;padding:6px 0}
   .map i{flex:1;height:2px;background:rgba(140,120,220,.25)}
@@ -238,7 +251,7 @@
       <div>
         <p class="eyebrow">Аркада на один палец</p>
         <h1>Ракета</h1>
-        <p class="hint" style="max-width:310px;margin:10px auto 0">Довести «Союз» до станции «Заря» у Титана. Девять секторов, три заслона.</p>
+        <p class="hint" style="max-width:320px;margin:10px auto 0">Одиннадцать лет станция «Заря» повторяет одну фразу голосом моей сестры. Её похоронили заочно. Я иду туда.</p>
       </div>
       <ul class="rules">
         <li><b class="c-warm">◆</b><span>Веди пальцем — корабль летит за ним и стреляет сам</span></li>
@@ -249,10 +262,25 @@
       <div class="row">
         <button class="btn" id="btn-start">Взлёт</button>
         <button class="btn ghost" id="btn-daily">Вызов дня</button>
-        <button class="btn ghost" id="btn-hangar">Ангар</button>
       </div>
+      <div class="row">
+        <button class="btn ghost" id="btn-journal">Архив</button>
+        <button class="btn ghost" id="btn-hangar">Ангар</button>
+        <button class="btn ghost" id="btn-tier" hidden>Виток 1</button>
+      </div>
+      <p class="hint" id="progress-line"></p>
       <p class="best">Рекорд <span id="best-menu">0</span> · <span class="cores"><span id="cores-menu">0</span></span></p>
       <p class="hint" id="daily-line">Вызов дня — один расклад для всех до полуночи</p>
+    </div>
+
+    <div class="screen scroll" id="journal" hidden>
+      <div class="shop-head">
+        <p class="eyebrow">Архив</p>
+        <div class="shop-bank" id="journal-count">0</div>
+        <p class="hint">Обрывок открывается за каждый забег. За новый рубеж — ещё один.</p>
+      </div>
+      <div class="grid" id="journal-list"></div>
+      <button class="btn" id="btn-journal-close">Назад</button>
     </div>
 
     <div class="screen scroll" id="hangar" hidden>
@@ -290,12 +318,18 @@
       <p class="hint">Модули живут до конца забега</p>
     </div>
 
-    <div class="screen" id="over" hidden>
-      <div style="display:grid;gap:12px;justify-items:center">
+    <div class="screen scroll" id="over" hidden>
+      <div style="display:grid;gap:10px;justify-items:center">
         <span class="record" id="record-badge" hidden>Новый рекорд</span>
         <h2 id="over-title">Полёт окончен</h2>
         <div class="final" id="final">0</div>
         <p class="best">+<span id="earned-cores">0</span> ядер в ангар</p>
+      </div>
+      <div class="frag" id="frag" hidden>
+        <p class="frag-tag" id="frag-tag"></p>
+        <h3 class="frag-t" id="frag-t"></h3>
+        <p class="frag-s" id="frag-s"></p>
+        <p class="frag-b" id="frag-b"></p>
       </div>
       <dl class="stats">
         <div><dt>Уровень</dt><dd id="st-level">1</dd></div>
@@ -360,8 +394,51 @@ function saveS(k,v){ try{ localStorage.setItem(k,v); }catch(e){} }
 var best=parseInt(loadS('raketa.best','0'),10)||0;
 var muted=loadS('raketa.muted','0')==='1';
 var cores=parseInt(loadS('raketa.cores','0'),10)||0;
+var logOpen=parseInt(loadS('raketa.log','0'),10)||0;
+var deepest=parseInt(loadS('raketa.deep','0'),10)||0;
+var finished=parseInt(loadS('raketa.fin','0'),10)||0;
+var tier=1;
+function T(){ return TIERS[Math.min(tier,TIERS.length)-1]; }
+function saveStory(){
+  saveS('raketa.log',String(logOpen));
+  saveS('raketa.deep',String(deepest));
+  saveS('raketa.fin',String(finished));
+}
 
 /* ---------- корабли ---------- */
+var LOG=[
+  {t:'Заявка на борт', s:'Личное дело, отметка кадровой службы',
+   b:'Отказывали трижды: возраст, налёт, психика. На четвёртый раз я не спрашивал — занял кресло, пока борт грузили.'},
+  {t:'Позывной', s:'Маяк станции «Заря», повтор каждые сорок минут',
+   b:'«Заря» — Земле. Мы держимся. Ждём.|Одиннадцать лет. Одна фраза. Один голос.'},
+  {t:'Вера', s:'Из письма, которое некому отправить',
+   b:'Она улетела, когда мне было девять. Обещала вернуться к выпускному.|Я выучил её голос по маяку лучше, чем помню лицо.'},
+  {t:'Первый доклад', s:'Архив ЦУП, четырнадцатые сутки',
+   b:'Дошли штатно, Титан под нами. Настроение экипажа отличное.|Вера просит передать домой, что видела кольца вблизи.'},
+  {t:'Отказ', s:'Архив ЦУП, аварийная запись',
+   b:'Потеря хода на торможении. Станция цела, ход — нет.|Расчётное время возврата: не определено.'},
+  {t:'Решение', s:'Протокол комиссии, два года спустя',
+   b:'Экипаж признан погибшим. Спасательная операция — нецелесообразной.|Маяк оставлен в работе как навигационный ориентир.'},
+  {t:'Странность', s:'Мои заметки на полях лицензии',
+   b:'Если это запись, почему меняется фон? В восьмом году — тишина, в четырнадцатом — гул.|Записи так себя не ведут.'},
+  {t:'Второй голос', s:'Разбор сигнала, наушники на максимуме',
+   b:'Под её словами есть ещё что-то. Не эхо.|Оно повторяет фразу с задержкой в полтакта, будто учится говорить.'},
+  {t:'Лунная тень', s:'Сводка потерь: шесть бортов',
+   b:'Все, кто шёл к Титану, пропадали в одном месте — за Луной.|Ни обломков, ни сигнала. Что-то стоит на проходе.'},
+  {t:'Хор', s:'Расшифровка помех у Юпитера',
+   b:'Оно не одно. Их много, и звучат они вместе — потому и глушат связь.|Резонаторы держат его целым. Сбей их — хор рассыпается.'},
+  {t:'Последняя запись Веры', s:'Маяк, слой под несущей',
+   b:'«Если кто-то слышит — не подходите к станции. Оно повторяет наши голоса.|Я больше не уверена, что говорю сама».|Сделано за неделю до того, как маяк начал повторяться.'},
+  {t:'Заря', s:'Причал станции. В эфире тишина',
+   b:'Шлюз открылся сам. Внутри горел свет и работал маяк — одиннадцать лет на резерве, которого не бывает.|Вера сидела в кресле связиста. Обернулась и сказала: «Ты долго».|Голос был её. Задержка — в полтакта.'}
+];
+var TIERS=[
+  {name:'Первый виток',    desc:'Маршрут как есть',            ehp:1,   gap:1,   dens:1,    hull:0, boss:1},
+  {name:'Второй виток',    desc:'Враги крепче на треть',       ehp:1.3, gap:1,   dens:1,    hull:0, boss:1},
+  {name:'Третий виток',    desc:'Ворота у́же, врагов больше',   ehp:1.3, gap:.85, dens:1.25, hull:0, boss:1},
+  {name:'Четвёртый виток', desc:'Корпус на единицу меньше',    ehp:1.4, gap:.85, dens:1.25, hull:1, boss:1},
+  {name:'Пятый виток',     desc:'Боссы вдвое живучее',         ehp:1.5, gap:.8,  dens:1.35, hull:1, boss:1.8}
+];
 var SECTORS=[
   {name:'Стартовый стол',       line:'Отрыв. Внизу остаётся всё, что мы больше не увидим.'},
   {name:'Низкая орбита',        line:'Обломки спутников, которые никто не убрал.'},
@@ -589,7 +666,7 @@ function startLevel(n){
   spd=170+n*11;
   enemies.length=0; ebullets.length=0; bullets.length=0; gates.length=0; motes.length=0;
   teslas.length=0; heals.length=0;
-  hpMax=Math.max(1,shipDef().hp+up.hull-(perks.greed?1:0));
+  hpMax=Math.max(1,shipDef().hp+up.hull-(perks.greed?1:0)-T().hull);
   hp=Math.min(hpMax, n===1?hpMax:hp+1);
   shields=Math.max(shields, up.shield+(n===1?shipDef().sh:0));
   if(perks.breath) shields=Math.min(4,shields+1);
@@ -602,7 +679,7 @@ function cue(main,sub){
   elCue.innerHTML=main+(sub?'<small>'+sub+'</small>':'');
   elCue.classList.add('on'); introT=2.1;
 }
-function curGap(){ return Math.max(W*(0.54-0.02*level),120); }
+function curGap(){ return Math.max(W*(0.54-0.02*level)*T().gap,110); }
 
 /* ---------- спавн ---------- */
 function spawnGate(){
@@ -623,7 +700,7 @@ function spawnEnemy(kind,x,y){
   if(kind==='miner'){  e.hp=6;  e.r=16; e.vy=62;  e.amp=34; e.drop=2; e.pts=140; }
   if(kind==='splitter'){e.hp=9; e.r=20; e.vy=72;  e.amp=26; e.drop=2; e.pts=180; }
   if(kind==='healer'){ e.hp=6;  e.r=14; e.vy=58;  e.amp=40; e.drop=2; e.pts=170; }
-  e.hp*=1+(level-1)*0.11; e.max=e.hp;
+  e.hp*=(1+(level-1)*0.11)*T().ehp; e.max=e.hp;
   enemies.push(e);
 }
 function spawnWave(){
@@ -651,7 +728,7 @@ function spawnBoss(){
   var type=((Math.floor(level/3)-1)%3+3)%3;
   boss={x:W/2,y:-140,vx:70,t:0,a1:2.4,a2:1.4,a3:5,r:52,flash:0,
         type:type,guard:false,guarded:false,beamT:-1,beamX:0,heal:3};
-  boss.hp=44+level*13; boss.max=boss.hp;
+  boss.hp=(44+level*13)*T().boss; boss.max=boss.hp;
   boss.name=BOSSES[type].name;
   cue(boss.name,BOSSES[type].line);
   beep(110,.6,'sawtooth',.1,60);
@@ -756,7 +833,36 @@ function takePerk(p){
   beep(780,.14,'triangle',.07,1100);
   renderShop(); syncBot();
 }
+function victory(){
+  phase='done'; state='over';
+  elBarWrap.classList.remove('boss');
+  topbar.hidden=true; botbar.hidden=true;
+  overAt=performance.now();
+  var s2=Math.round(score);
+  if(s2>best){ best=s2; saveS('raketa.best',String(best)); }
+  if(logOpen<LOG.length){ logOpen=LOG.length; }
+  deepest=Math.max(deepest,SECTORS.length);
+  if(tier>finished) finished=tier;
+  saveStory();
+  var fin=LOG[LOG.length-1];
+  $('final').textContent=fmt(s2);
+  $('earned-cores').textContent=runCores;
+  $('st-level').textContent=SECTORS.length;
+  $('st-kills').textContent=kills;
+  $('st-combo').textContent='×'+bestCombo.toFixed(1);
+  $('best-over').textContent=fmt(best);
+  $('record-badge').hidden=true;
+  $('over-title').textContent='«Заря»';
+  showFragment(fin,'Конец маршрута');
+  scOver.hidden=false;
+  beep(520,1.2,'triangle',.09,780);
+}
 function levelDone(){
+  if(level>=SECTORS.length){ 
+    bank+=30+level*10;
+    var g2=1+(level%3===0?3:0); cores+=g2; runCores+=g2; saveCores();
+    victory(); return;
+  }
   phase='done';
   bank+=30+level*10;
   score+=400*level;
@@ -785,6 +891,18 @@ function gameOver(){
   $('best-over').textContent=fmt(best);
   $('record-badge').hidden=!rec;
   $('over-title').textContent=rec?'Так высоко ещё не было':'Полёт окончен';
+
+  /* архив открывается и от поражения: один обрывок за забег,
+     второй — если забрались дальше, чем когда-либо */
+  var got=null;
+  if(logOpen<LOG.length-1){ got=LOG[logOpen]; logOpen++; }
+  if(level>deepest){
+    deepest=level;
+    if(logOpen<LOG.length-1){ got=LOG[logOpen]; logOpen++; }
+  }
+  saveStory();
+  if(got) showFragment(got,'Открыт обрывок '+logOpen+' из '+LOG.length);
+  else hideFragment();
   scOver.hidden=false;
 }
 function start(){ beginRun(false); }
@@ -795,6 +913,7 @@ function beginRun(isDaily){
   setSeed(daily?seedFromKey(dayKey):(Math.random()*4294967296));
   ensureAudio(); state='playing';
   scMenu.hidden=true; scOver.hidden=true; scShop.hidden=true; scPause.hidden=true; scHangar.hidden=true;
+  $('journal').hidden=true; hideFragment();
   topbar.hidden=false; botbar.hidden=false;
   newRun(); syncBot();
 }
@@ -814,7 +933,7 @@ function closeHangar(){
   if(state!=='hangar') return;
   scHangar.hidden=true;
   state=prevScreen==='over'?'over':'menu';
-  if(state==='over') scOver.hidden=false; else { scMenu.hidden=false; $('cores-menu').textContent=cores; syncDaily(); }
+  if(state==='over') scOver.hidden=false; else { scMenu.hidden=false; syncMenu(); syncDaily(); }
 }
 function pause(){ if(state!=='playing') return; state='paused'; scPause.hidden=false; }
 function resume(){ if(state!=='paused') return; state='playing'; scPause.hidden=true; }
@@ -938,7 +1057,7 @@ function update(dt){
 
   if(phase==='waves'){
     waveCd-=dt;
-    if(waveCd<=0){ spawnWave(); waveCd=Math.max(1.1,(3.4-level*.14)/route.en); }
+    if(waveCd<=0){ spawnWave(); waveCd=Math.max(1.0,(3.4-level*.14)/(route.en*T().dens)); }
     if(levelT>=goal){ if(level%3===0) spawnBoss(); else phase='clear'; }
   } else if(phase==='clear'){
     if(enemies.length===0) levelDone();
@@ -1529,6 +1648,55 @@ function renderShop(){
     it.appendChild(btn);
   });
 }
+function showFragment(f,tag){
+  $('frag-tag').textContent=tag;
+  $('frag-t').textContent=f.t;
+  $('frag-s').textContent=f.s;
+  $('frag-b').innerHTML=f.b.split('|').join('<br>');
+  $('frag').hidden=false;
+}
+function hideFragment(){ $('frag').hidden=true; }
+function renderJournal(){
+  $('journal-count').textContent=logOpen+' / '+LOG.length;
+  var wr=$('journal-list'); wr.innerHTML='';
+  LOG.forEach(function(f,i){
+    var d=document.createElement('div'),open=i<logOpen;
+    d.className='frag'+(open?'':' locked');
+    d.style.setProperty('--i',i);
+    if(open){
+      d.innerHTML='<p class="frag-tag">Обрывок '+(i+1)+'</p>'+
+        '<h3 class="frag-t">'+f.t+'</h3>'+
+        '<p class="frag-s">'+f.s+'</p>'+
+        '<p class="frag-b">'+f.b.split('|').join('<br>')+'</p>';
+    } else {
+      d.innerHTML='<p class="frag-tag">Обрывок '+(i+1)+'</p>'+
+        '<h3 class="frag-t">— — —</h3>'+
+        '<p class="frag-b">Ещё не найден.</p>';
+    }
+    wr.appendChild(d);
+  });
+}
+function openJournal(){
+  if(state==='playing') return;
+  prevScreen=state; state='journal';
+  scMenu.hidden=true; scOver.hidden=true;
+  renderJournal(); $('journal').hidden=false;
+}
+function closeJournal(){
+  if(state!=='journal') return;
+  $('journal').hidden=true;
+  state=prevScreen==='over'?'over':'menu';
+  if(state==='over') scOver.hidden=false; else { scMenu.hidden=false; syncMenu(); }
+}
+function syncMenu(){
+  $('cores-menu').textContent=cores;
+  $('best-menu').textContent=fmt(best);
+  $('progress-line').textContent='Дальше всего: сектор '+deepest+' из '+SECTORS.length+
+    ' · Архив '+logOpen+' из '+LOG.length+(finished?' · Витков пройдено '+finished:'');
+  var bt=$('btn-tier');
+  bt.hidden=finished<1;
+  bt.textContent=TIERS[Math.min(tier,TIERS.length)-1].name;
+}
 function renderHangar(){
   $('hangar-cores').textContent=cores;
   var wr=$('hangar-ships'); wr.innerHTML='';
@@ -1592,10 +1760,10 @@ window.addEventListener('keydown',function(e){
   var k=e.key.length===1?e.key.toLowerCase():e.key; keys[k]=true;
   if(k===' '||k==='Enter'){
     if(state==='paused') resume(); else if(state==='shop') nextLevel();
-    else if(state==='hangar') closeHangar(); else if(state!=='playing') start();
+    else if(state==='hangar') closeHangar(); else if(state==='journal') closeJournal(); else if(state!=='playing') start();
     e.preventDefault();
   }
-  if(k==='Escape'){ if(state==='playing') pause(); else if(state==='hangar') closeHangar(); }
+  if(k==='Escape'){ if(state==='playing') pause(); else if(state==='hangar') closeHangar(); else if(state==='journal') closeJournal(); }
   if(e.key.indexOf('Arrow')===0) e.preventDefault();
 });
 window.addEventListener('keyup',function(e){ keys[e.key.length===1?e.key.toLowerCase():e.key]=false; });
@@ -1609,6 +1777,15 @@ $('btn-alt').addEventListener('click',function(e){ e.stopPropagation(); nextRout
 $('btn-hangar').addEventListener('click',function(e){ e.stopPropagation(); openHangar(); });
 $('btn-hangar2').addEventListener('click',function(e){ e.stopPropagation(); openHangar(); });
 $('btn-hangar-close').addEventListener('click',function(e){ e.stopPropagation(); closeHangar(); });
+$('btn-journal').addEventListener('click',function(e){ e.stopPropagation(); openJournal(); });
+$('btn-journal-close').addEventListener('click',function(e){ e.stopPropagation(); closeJournal(); });
+$('btn-tier').addEventListener('click',function(e){
+  e.stopPropagation();
+  var max=Math.min(finished+1,TIERS.length);
+  tier=tier>=max?1:tier+1;
+  syncMenu();
+});
+$('journal').addEventListener('pointerdown',function(e){ e.stopPropagation(); });
 scShop.addEventListener('pointerdown',function(e){ e.stopPropagation(); });
 scHangar.addEventListener('pointerdown',function(e){ e.stopPropagation(); });
 
@@ -1624,8 +1801,7 @@ if(window.ResizeObserver) new ResizeObserver(resize).observe(stage);
 window.addEventListener('resize',resize);
 window.addEventListener('orientationchange',function(){ setTimeout(resize,120); });
 
-$('best-menu').textContent=fmt(best);
-$('cores-menu').textContent=cores;
+syncMenu();
 function syncDaily(){
   var db=dailyBest();
   $('daily-line').textContent=db?('Вызов дня · сегодня лучшее '+fmt(db)):'Вызов дня — один расклад для всех до полуночи';
