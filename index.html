@@ -64,6 +64,8 @@
   .bar{height:3px; border-radius:2px; background:rgba(140,120,220,.2); overflow:hidden}
   .bar i{display:block; height:100%; width:0%; background:var(--warm); box-shadow:0 0 12px var(--warm); transition:width .2s linear}
   .bar.boss{height:6px}
+  .bar.chg{height:3px;margin-top:3px;background:rgba(120,220,255,.14)}
+  .bar.chg i{background:#7ADCFF;box-shadow:0 0 12px #7ADCFF;transition:width .12s linear}
   .bar.boss i{background:var(--hazard); box-shadow:0 0 12px var(--hazard)}
 
   .botbar{
@@ -237,6 +239,7 @@
     <div class="topbar" id="topbar" hidden>
       <span class="lvl" id="lvl">Уровень 1</span>
       <div class="bar" id="bar-wrap"><i id="bar"></i></div>
+      <div class="bar chg"><i id="chg"></i></div>
     </div>
 
     <div class="botbar" id="botbar" hidden>
@@ -258,6 +261,7 @@
         <li><b class="c-haz">▬</b><span>Ворота и враги снимают прочность корпуса</span></li>
         <li><b class="c-en">●</b><span>Энергия тратится в магазине между уровнями</span></li>
         <li><b class="c-vi">✦</b><span>Ядра остаются навсегда — на них покупают корпуса</span></li>
+        <li><b style="color:#7ADCFF">≈</b><span>Пролетай вплотную к вражеским снарядам — копится импульс</span></li>
       </ul>
       <div class="row">
         <button class="btn" id="btn-start">Взлёт</button>
@@ -338,6 +342,7 @@
       </dl>
       <div class="row">
         <button class="btn" id="btn-again">Ещё раз</button>
+        <button class="btn ghost" id="btn-share">Поделиться</button>
         <button class="btn ghost" id="btn-hangar2">Ангар</button>
       </div>
       <p class="hint">Рекорд <span id="best-over">0</span></p>
@@ -619,7 +624,9 @@ var PERKS=[
   {id:'vampire', name:'Вампир',         desc:'Каждый 12-й сбитый чинит корпус'},
   {id:'shadow',  name:'Тень',           desc:'Неуязвимость после урона вдвое дольше'},
   {id:'net',     name:'Сеть',           desc:'Радиус магнита +60%'},
-  {id:'breath',  name:'Второе дыхание', desc:'+1 щит в начале каждого уровня'}
+  {id:'breath',  name:'Второе дыхание', desc:'+1 щит в начале каждого уровня'},
+  {id:'pierce', name:'Пробивной заряд', desc:'Снаряды прошивают двух врагов насквозь'},
+  {id:'revive', name:'Второй шанс',     desc:'Один раз за забег: вместо гибели — 20% корпуса', rare:true}
 ];
 var up={},owned={},weapon='pulse',perks={},draft=[],draftPicked=false,vampCount=0;
 function resetProgress(){
@@ -644,6 +651,7 @@ var t=0,spd=190,score=0,combo=1,bestCombo=1,bank=0,kills=0,runCores=0;
 var hp=3,hpMax=3,shields=0;
 var gates=[],motes=[],boosts=[],parts=[],pops=[],trail=[],enemies=[],bullets=[],ebullets=[],rings=[],teslas=[],heals=[];
 var px=0,py=0,tx=0,ty=0,pvx=0,recoil=0,fireCd=0,beamOn=0,muzzle=0,bobT=0,growPop=0;
+var hitstop=0,charge=0,revived=false,lasers=[];
 var inv=0,shakeT=0,shakeA=0,flash=0,flashRGB='240,74,120';
 var sinceGate=0,sinceBoost=0,overAt=0;
 var BARH=12;
@@ -653,7 +661,8 @@ function newRun(){
   t=0; score=0; combo=1; bestCombo=1; kills=0; level=1; runCores=0;
   gates.length=0; motes.length=0; boosts.length=0; parts.length=0; pops.length=0;
   trail.length=0; enemies.length=0; bullets.length=0; ebullets.length=0; rings.length=0;
-  teslas.length=0; heals.length=0;
+  teslas.length=0; heals.length=0; lasers.length=0;
+  hitstop=0; charge=0; revived=false;
   px=W/2; py=H*.74; tx=px; ty=py; pvx=0; recoil=0; fireCd=0; growPop=0;
   shakeT=0; flash=0; sinceGate=200; sinceBoost=0;
   shields=shipDef().sh;
@@ -665,7 +674,7 @@ function startLevel(n){
   waveCd=Math.max(1.1,(3.4-n*.14)/route.en);
   spd=170+n*11;
   enemies.length=0; ebullets.length=0; bullets.length=0; gates.length=0; motes.length=0;
-  teslas.length=0; heals.length=0;
+  teslas.length=0; heals.length=0; lasers.length=0;
   hpMax=Math.max(1,shipDef().hp+up.hull-(perks.greed?1:0)-T().hull);
   hp=Math.min(hpMax, n===1?hpMax:hp+1);
   shields=Math.max(shields, up.shield+(n===1?shipDef().sh:0));
@@ -700,13 +709,23 @@ function spawnEnemy(kind,x,y){
   if(kind==='miner'){  e.hp=6;  e.r=16; e.vy=62;  e.amp=34; e.drop=2; e.pts=140; }
   if(kind==='splitter'){e.hp=9; e.r=20; e.vy=72;  e.amp=26; e.drop=2; e.pts=180; }
   if(kind==='healer'){ e.hp=6;  e.r=14; e.vy=58;  e.amp=40; e.drop=2; e.pts=170; }
+  if(kind==='ram'){    e.hp=4;  e.r=14; e.vy=70;  e.amp=0;  e.drop=1; e.pts=110; e.dash=0; e.warn=0; }
   e.hp*=(1+(level-1)*0.11)*T().ehp; e.max=e.hp;
   enemies.push(e);
+}
+function spawnLaser(){
+  lasers.push({y:-30,side:rnd()<.5?0:1,t:rnd()*1.2});
+}
+function laserPhase(l){ return l.t%3.4; }
+function laserActive(l){ var p=laserPhase(l); return p>=1.1&&p<2.0; }
+function laserRange(l){
+  return l.side===0?[0,W*.56]:[W*.44,W];
 }
 function spawnWave(){
   var pool=['drone'];
   if(level>=2) pool.push('swarm');
   if(level>=3) pool.push('turret');
+  if(level>=3) pool.push('ram');
   if(level>=4) pool.push('miner');
   if(level>=5) pool.push('bruiser');
   if(level>=6) pool.push('splitter');
@@ -714,9 +733,11 @@ function spawnWave(){
   var kind=pool[Math.floor(rnd()*pool.length)];
   var n=kind==='swarm'?(3+Math.floor(rnd()*3)):
         (kind==='bruiser')?1:
+        (kind==='ram')?(2+Math.floor(rnd()*2)):
         (kind==='miner'||kind==='healer'||kind==='splitter')?(1+Math.floor(rnd()*2)):
         (2+Math.floor(rnd()*2));
   for(var i=0;i<n;i++) spawnEnemy(kind,40+rnd()*Math.max(1,W-80),-40-i*52);
+  if(level>=5&&lasers.length<2&&rnd()<.35) spawnLaser();
 }
 var BOSSES=[
   {id:'watch', name:'Смотритель', line:'Он не пускает дальше Луны'},
@@ -773,6 +794,23 @@ function collect(m){
   elCombo.classList.remove('bump'); void elCombo.offsetWidth; elCombo.classList.add('bump');
   beep(520+Math.min(combo,6)*90,.09,'square',.055,0);
 }
+function superRelease(){
+  charge=0;
+  flashRGB='120,220,255'; flash=.85; shake(14);
+  ring(px,py,20,Math.max(W,H),.7,'120,220,255',4);
+  var i;
+  for(i=ebullets.length-1;i>=0;i--){
+    if(!ebullets[i].mine) motes.push({x:ebullets[i].x,y:ebullets[i].y,ph:0,vy:20});
+    ebullets.splice(i,1);
+  }
+  for(i=enemies.length-1;i>=0;i--){
+    enemies[i].hp-=6*dmgMul(); enemies[i].flash=.15;
+    if(enemies[i].hp<=0) killEnemy(enemies[i],i);
+  }
+  if(boss&&!boss.guard){ boss.hp-=10*dmgMul(); boss.flash=.15; }
+  beep(180,.5,'triangle',.11,900);
+  pop(px,py-52,'импульс','120,220,255');
+}
 function damage(n){
   if(inv>0) return;
   elHearts.classList.remove('hurt'); void elHearts.offsetWidth; elHearts.classList.add('hurt');
@@ -784,7 +822,19 @@ function damage(n){
   hp-=n; combo=1; inv=perks.shadow?3:1.5; flashRGB='240,74,120'; flash=.6; shake(13);
   burst(px,py,26,'240,74,120',280); ring(px,py,16,80,.5,'240,74,120',3);
   beep(170,.3,'sawtooth',.1,60); syncBot();
-  if(hp<=0) gameOver();
+  if(hp<=0){
+    if(perks.revive&&!revived){
+      revived=true;
+      hp=Math.max(1,Math.ceil(hpMax*.2));
+      inv=3; charge=0; ebullets.length=0;
+      flashRGB='255,196,107'; flash=.9; shake(16);
+      ring(px,py,15,Math.max(W,H)*.7,.8,'255,196,107',4);
+      pop(px,py-52,'второй шанс','255,196,107');
+      beep(300,.6,'triangle',.1,620);
+      syncBot(); return;
+    }
+    gameOver();
+  }
 }
 function explode(x,y,d){
   ring(x,y,10,84,.45,'255,196,107',3); burst(x,y,18,'255,168,74',260);
@@ -797,6 +847,7 @@ function explode(x,y,d){
 }
 function killEnemy(e,i){
   kills++; score+=e.pts*combo;
+  hitstop=Math.max(hitstop,RM?.02:(e.r>22?.075:.045));
   burst(e.x,e.y,e.r>22?34:18,'240,74,120',e.r*11);
   burst(e.x,e.y,8,'255,196,107',e.r*7);
   ring(e.x,e.y,e.r*.6,e.r*3.2,.42,'255,150,180',2);
@@ -818,8 +869,14 @@ function killEnemy(e,i){
 function fmt(n){ return String(Math.round(n)).replace(/\B(?=(\d{3})+(?!\d))/g,' '); }
 
 function rollDraft(){
-  var pool=[],i;
-  for(i=0;i<PERKS.length;i++) if(!perks[PERKS[i].id]) pool.push(PERKS[i]);
+  var pool=[],i,p;
+  for(i=0;i<PERKS.length;i++){
+    p=PERKS[i];
+    if(perks[p.id]) continue;
+    if(p.rare&&rnd()<0.7) continue;   /* «Второй шанс» предлагается редко */
+    pool.push(p);
+  }
+  if(!pool.length) for(i=0;i<PERKS.length;i++) if(!perks[PERKS[i].id]) pool.push(PERKS[i]);
   draft=[]; draftPicked=pool.length===0;
   for(i=0;i<3&&pool.length;i++){
     var k=Math.floor(rnd()*pool.length);
@@ -881,7 +938,7 @@ function gameOver(){
   topbar.hidden=true; botbar.hidden=true;
   var s=Math.round(score),rec=s>best;
   if(rec){ best=s; saveS('raketa.best',String(best)); }
-  var bonus=Math.floor(s/2500); cores+=bonus; runCores+=bonus; saveCores();
+  var bonus=Math.min(4,Math.floor(s/6000)); cores+=bonus; runCores+=bonus; saveCores();
   if(daily&&s>dailyBest()) saveS('raketa.daily.'+dayKey,String(s));
   $('final').textContent=fmt(s);
   $('earned-cores').textContent=runCores;
@@ -913,6 +970,7 @@ function beginRun(isDaily){
   setSeed(daily?seedFromKey(dayKey):(Math.random()*4294967296));
   ensureAudio(); state='playing';
   scMenu.hidden=true; scOver.hidden=true; scShop.hidden=true; scPause.hidden=true; scHangar.hidden=true;
+  $('btn-share').textContent='Поделиться';
   $('journal').hidden=true; hideFragment();
   topbar.hidden=false; botbar.hidden=false;
   newRun(); syncBot();
@@ -1085,7 +1143,22 @@ function update(dt){
 
   for(i=enemies.length-1;i>=0;i--){
     e=enemies[i]; e.t+=dt; e.age+=dt; if(e.flash>0) e.flash-=dt;
-    if(e.kind==='swarm') { e.x+=Math.sign(px-e.x)*80*dt; e.y+=(e.vy+spd*.25)*dt; }
+    if(e.kind==='ram'){
+      if(e.dash>0){ e.dash-=dt; e.x+=e.dvx*dt; e.y+=e.dvy*dt; }
+      else if(e.warn>0){
+        e.warn-=dt;
+        if(e.warn<=0){
+          var ra=Math.atan2(py-e.y,px-e.x);
+          e.dvx=Math.cos(ra)*540; e.dvy=Math.sin(ra)*540; e.dash=1.7;
+          beep(420,.12,'sawtooth',.05,180);
+        }
+      }
+      else{
+        e.y+=(e.vy+spd*.25)*dt;
+        if(py-e.y>70&&py-e.y<430&&Math.abs(px-e.x)<170) e.warn=.45;
+      }
+    }
+    else if(e.kind==='swarm') { e.x+=Math.sign(px-e.x)*80*dt; e.y+=(e.vy+spd*.25)*dt; }
     else { e.x=e.x0+Math.sin(e.t*1.5)*e.amp; e.y+=(e.vy+spd*.25)*dt; }
     e.x=Math.max(e.r,Math.min(W-e.r,e.x));
     if(e.kind==='miner'&&e.y>0&&e.y<H*.8){
@@ -1230,12 +1303,16 @@ function update(dt){
       e=enemies[j];
       var hx=e.x-b.x,hy=e.y-b.y;
       if(hx*hx+hy*hy<(e.r+b.r)*(e.r+b.r)){
-        if(b.kind==='mortar'){ explode(b.x,b.y,b.dmg); }
+        if(b.kind==='mortar'){ explode(b.x,b.y,b.dmg); gone=true; }
         else {
           e.hp-=b.dmg; e.flash=.12; burst(b.x,b.y,4,'255,196,107',90);
           if(e.hp<=0) killEnemy(e,j);
+          if(perks.pierce&&b.kind!=='homing'){
+            b.pierced=(b.pierced||0)+1;
+            if(b.pierced>2) gone=true;
+          } else gone=true;
         }
-        gone=true; break;
+        break;
       }
     }
     if(!gone&&boss&&!boss.guard&&boss.y>-40){
@@ -1247,11 +1324,30 @@ function update(dt){
     if(gone) bullets.splice(i,1);
   }
 
+  var wantSuper=false;
   for(i=ebullets.length-1;i>=0;i--){
     b=ebullets[i]; b.x+=b.vx*dt; b.y+=b.vy*dt;
     if(b.y<-40||b.y>H+40||b.x<-40||b.x>W+40){ ebullets.splice(i,1); continue; }
-    var ex=b.x-px,ey=b.y-py;
-    if(ex*ex+ey*ey<(b.r+HR)*(b.r+HR)){ ebullets.splice(i,1); damage(1); }
+    var ex=b.x-px,ey=b.y-py,ed2=ex*ex+ey*ey;
+    if(ed2<(b.r+HR)*(b.r+HR)){ ebullets.splice(i,1); damage(1); continue; }
+    if(!b.graz&&inv<=0&&ed2<(b.r+HR+22)*(b.r+HR+22)){
+      b.graz=true;
+      charge=Math.min(1,charge+.055);
+      combo=Math.min(8,combo+.04); score+=6*combo;
+      beep(1200,.04,'sine',.02,1500);
+      if(charge>=1) wantSuper=true;   /* очищать массив во время его перебора нельзя */
+    }
+  }
+
+  if(wantSuper) superRelease();
+
+  for(i=lasers.length-1;i>=0;i--){
+    var lz=lasers[i]; lz.t+=dt; lz.y+=spd*dt*.85;
+    if(laserActive(lz)&&Math.abs(py-lz.y)<15){
+      var rg2=laserRange(lz);
+      if(px>rg2[0]&&px<rg2[1]) damage(1);
+    }
+    if(lz.y>H+40) lasers.splice(i,1);
   }
 
   var mr=magnetR();
@@ -1399,7 +1495,8 @@ function drawEnemy(e){
           e.kind==='bruiser'?'140,90,230':
           e.kind==='miner'?'255,170,90':
           e.kind==='splitter'?'200,100,240':
-          e.kind==='healer'?'90,230,255':'240,74,120';
+          e.kind==='healer'?'90,230,255':
+          e.kind==='ram'?'255,130,60':'240,74,120';
   var sc=Math.min(1,e.age*5),r=e.r*sc;
   ctx.globalCompositeOperation='lighter'; drawGlow(rgb,e.x,e.y,r*2.1,.5);
   ctx.globalCompositeOperation='source-over';
@@ -1407,6 +1504,17 @@ function drawEnemy(e){
   if(e.kind==='drone'){ poly(e.x,e.y,r,4,e.t*1.2); ctx.fill(); }
   else if(e.kind==='swarm'){ poly(e.x,e.y,r,3,Math.PI/2); ctx.fill(); }
   else if(e.kind==='turret'){ poly(e.x,e.y,r,6,e.t*.4); ctx.fill(); ctx.fillRect(e.x-3,e.y+r-4,6,10); }
+  else if(e.kind==='ram'){
+    if(e.warn>0){
+      ctx.globalCompositeOperation='lighter';
+      drawGlow('255,255,255',e.x,e.y,r*(2.6+e.warn*3),.5+.4*Math.sin(e.warn*40));
+      ctx.globalCompositeOperation='source-over';
+      ctx.fillStyle='#FFFFFF';
+    }
+    ctx.beginPath();
+    ctx.moveTo(e.x,e.y+r*1.25); ctx.lineTo(e.x-r,e.y-r*.7); ctx.lineTo(e.x+r,e.y-r*.7);
+    ctx.closePath(); ctx.fill();
+  }
   else if(e.kind==='miner'){ poly(e.x,e.y,r,5,e.t*.8); ctx.fill();
     ctx.fillStyle='rgba(8,6,15,.5)'; circle(e.x,e.y,r*.38); ctx.fill(); }
   else if(e.kind==='splitter'){ rr(e.x-r*.85,e.y-r*.85,r*1.7,r*1.7,6); ctx.fill();
@@ -1491,6 +1599,25 @@ function draw(){
     drawGlow('255,120,160',l,g.y+BARH/2,15,.55); drawGlow('255,120,160',r,g.y+BARH/2,15,.55);
     ctx.globalCompositeOperation='source-over';
   }
+  for(i=0;i<lasers.length;i++){
+    var lz=lasers[i],rg=laserRange(lz),ph=laserPhase(lz),wd=rg[1]-rg[0];
+    ctx.globalCompositeOperation='lighter';
+    if(laserActive(lz)){
+      var g3=ctx.createLinearGradient(0,lz.y-18,0,lz.y+18);
+      g3.addColorStop(0,'rgba(255,90,140,0)');
+      g3.addColorStop(.5,'rgba(255,90,140,.5)');
+      g3.addColorStop(1,'rgba(255,90,140,0)');
+      ctx.fillStyle=g3; ctx.fillRect(rg[0],lz.y-18,wd,36);
+      ctx.fillStyle='rgba(255,255,255,.92)'; ctx.fillRect(rg[0],lz.y-2.5,wd,5);
+    } else if(ph<1.1){
+      ctx.fillStyle='rgba(255,90,140,'+(.14+.26*Math.abs(Math.sin(ph*16)))+')';
+      ctx.fillRect(rg[0],lz.y-1,wd,2);
+    }
+    ctx.globalCompositeOperation='source-over';
+    ctx.fillStyle='rgba(255,150,175,.95)';
+    var em=lz.side===0?rg[1]:rg[0];
+    rr(em-4.5,lz.y-10,9,20,3); ctx.fill();
+  }
   for(i=0;i<enemies.length;i++) drawEnemy(enemies[i]);
   if(boss) drawBoss();
 
@@ -1561,7 +1688,7 @@ function syncHud(){
   if(state!=='playing') elCombo.classList.remove('on');
   var bk=Math.floor(bank);
   if(bk!==lastBank){ elBank.textContent=fmt(bk); lastBank=bk; }
-  if(state==='playing') syncTop();
+  if(state==='playing'){ syncTop(); $('chg').style.width=(charge*100).toFixed(0)+'%'; }
 }
 function syncTop(){
   elLvl.textContent=(daily?'Вызов дня · ':'')+(boss?('Босс · '+boss.name):(level+' · '+sector(level).name));
@@ -1648,6 +1775,43 @@ function renderShop(){
     it.appendChild(btn);
   });
 }
+function shareResult(){
+  try{
+    var c=document.createElement('canvas'),W2=800,H2=420;
+    c.width=W2; c.height=H2;
+    var g=c.getContext('2d');
+    g.fillStyle='#0A0718'; g.fillRect(0,0,W2,H2);
+    var gr=g.createRadialGradient(W2/2,H2*1.15,0,W2/2,H2*1.15,H2);
+    gr.addColorStop(0,'rgba(110,79,216,.55)'); gr.addColorStop(1,'rgba(110,79,216,0)');
+    g.fillStyle=gr; g.fillRect(0,0,W2,H2);
+    g.textAlign='center';
+    g.fillStyle='#8072BE'; g.font='600 20px system-ui,sans-serif';
+    g.fillText('Р А К Е Т А',W2/2,70);
+    g.fillStyle='#FFC46B'; g.font='700 96px ui-monospace,monospace';
+    g.fillText(fmt(Math.round(score)),W2/2,196);
+    g.fillStyle='#EFE9FF'; g.font='500 24px system-ui,sans-serif';
+    g.fillText(sector(level).name+' · сектор '+level+' из '+SECTORS.length,W2/2,244);
+    g.fillStyle='#9C93C4'; g.font='500 20px system-ui,sans-serif';
+    g.fillText('сбито '+kills+' · комбо ×'+bestCombo.toFixed(1)+(daily?' · вызов дня '+dayKey:''),W2/2,282);
+    g.fillStyle='#6E5AA8'; g.font='500 18px system-ui,sans-serif';
+    g.fillText(location.host+location.pathname,W2/2,H2-38);
+    var txt='«Ракета» — '+fmt(Math.round(score))+', '+sector(level).name+(daily?', вызов дня':'');
+    var url=location.href.split('?')[0];
+    if(!c.toBlob){ if(navigator.share) navigator.share({text:txt,url:url}); return; }
+    c.toBlob(function(bl){
+      var file=null;
+      try{ file=new File([bl],'raketa.png',{type:'image/png'}); }catch(e){}
+      if(file&&navigator.canShare&&navigator.canShare({files:[file]})&&navigator.share){
+        navigator.share({files:[file],text:txt}).catch(function(){});
+      } else if(navigator.share){
+        navigator.share({text:txt,url:url}).catch(function(){});
+      } else if(navigator.clipboard&&navigator.clipboard.writeText){
+        navigator.clipboard.writeText(txt+' '+url);
+        $('btn-share').textContent='Скопировано';
+      }
+    },'image/png');
+  }catch(e){}
+}
 function showFragment(f,tag){
   $('frag-tag').textContent=tag;
   $('frag-t').textContent=f.t;
@@ -1728,7 +1892,8 @@ function renderHangar(){
 var last=performance.now();
 function frame(now){
   var dt=Math.min((now-last)/1000,.033); last=now;
-  if(state==='playing') update(dt); else if(state!=='paused') ambient(dt);
+  if(hitstop>0){ hitstop-=dt; }
+  else if(state==='playing') update(dt); else if(state!=='paused') ambient(dt);
   draw(); syncHud();
   if(state==='shop') drawPreview();
   requestAnimationFrame(frame);
@@ -1778,6 +1943,7 @@ $('btn-hangar').addEventListener('click',function(e){ e.stopPropagation(); openH
 $('btn-hangar2').addEventListener('click',function(e){ e.stopPropagation(); openHangar(); });
 $('btn-hangar-close').addEventListener('click',function(e){ e.stopPropagation(); closeHangar(); });
 $('btn-journal').addEventListener('click',function(e){ e.stopPropagation(); openJournal(); });
+$('btn-share').addEventListener('click',function(e){ e.stopPropagation(); shareResult(); });
 $('btn-journal-close').addEventListener('click',function(e){ e.stopPropagation(); closeJournal(); });
 $('btn-tier').addEventListener('click',function(e){
   e.stopPropagation();
